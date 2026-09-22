@@ -1,120 +1,68 @@
-import joblib
 import pandas as pd
+import joblib
 import numpy as np
 
+# 1. Load the pre-trained model and encoder
+try:
+    model = joblib.load('mastitis_risk_model.pkl')
+    encoder = joblib.load('mastitis_encoder.pkl')
+except FileNotFoundError:
+    print("Error: Train the model first to generate the .pkl files.")
+    exit()
 
-def showcase_mastitis_prediction():
-    print("=" * 60)
-    print("  MASTITIS ML MODEL - PREDICTION SHOWCASE")
-    print("=" * 60)
+# 2. Incoming hardware data dictionary for a HEALTHY cow (Last 7 Days)
+new_cow_data = {
+    'Age': 4,
+    'Breed': 'Holstein',
+    'Farm_Cleanliness': 'Yes',  # Clean barn hygiene
 
-    # 1. Load the trained model artifacts
-    model_file = "mastitis_model.pkl"
-    dataset_csv = "mastitis_dataset_with_cow_info.csv"
+    # Day 1 (7 Days Ago) - Baseline metrics
+    'env_temp_day1': 22.0, 'env_humidity_day1': 55.0, 'body_temp_day1': 38.3,
+    'cows_movement_day1': 4800, 'milk_conductivity_day1': 4.1, 'milk_yield_day1': 25.0,
 
-    try:
-        artifacts = joblib.load(model_file)
-        if isinstance(artifacts, dict):
-            model = artifacts["model"]
-            feature_names = artifacts["feature_names"]
-        else:
-            model = artifacts
-            feature_names = getattr(model, "feature_names_in_", None)
-        print(f"[SUCCESS] Loaded model and features from '{model_file}'")
-    except Exception as e:
-        print(f"[ERROR] Could not load model file '{model_file}': {e}")
-        return
+    # Day 2
+    'env_temp_day2': 22.5, 'env_humidity_day2': 56.0, 'body_temp_day2': 38.4,
+    'cows_movement_day2': 4900, 'milk_conductivity_day2': 4.2, 'milk_yield_day2': 25.5,
 
-    # 2. Load dataset metadata (to grab valid cow ages and breeds)
-    try:
-        df_dataset = pd.read_csv(dataset_csv)
-        print(f"[SUCCESS] Loaded dataset reference from '{dataset_csv}'")
-    except Exception as e:
-        print(f"[ERROR] Could not load dataset CSV: {e}")
-        return
+    # Day 3
+    'env_temp_day3': 21.8, 'env_humidity_day3': 54.0, 'body_temp_day3': 38.3,
+    'cows_movement_day3': 4750, 'milk_conductivity_day3': 4.1, 'milk_yield_day3': 24.8,
 
-    # 3. Create a sample live reading simulating sensor telemetry for a specific cow
-    # (Notice how Cows_Movement_Activity is within the trained dataset range: ~3000-5000)
-    sample_cow_id = "C0001"
-    cow_meta = (
-        df_dataset[df_dataset["Cow_ID"] == sample_cow_id]
-        [["Age_Years", "Breed"]]
-        .drop_duplicates()
-        .iloc[0]
-    )
+    # Day 4
+    'env_temp_day4': 23.0, 'env_humidity_day4': 58.0, 'body_temp_day4': 38.5,
+    'cows_movement_day4': 5000, 'milk_conductivity_day4': 4.2, 'milk_yield_day4': 25.2,
 
-    age = cow_meta["Age_Years"]
-    breed = cow_meta["Breed"]
+    # Day 5
+    'env_temp_day5': 22.2, 'env_humidity_day5': 57.0, 'body_temp_day5': 38.4,
+    'cows_movement_day5': 4850, 'milk_conductivity_day5': 4.3, 'milk_yield_day5': 25.0,
 
-    print(f"\n--- Testing Subject Profile ---")
-    print(f"Cow ID : {sample_cow_id}")
-    print(f"Breed  : {breed}")
-    print(f"Age    : {age} years")
+    # Day 6
+    'env_temp_day6': 21.5, 'env_humidity_day6': 55.0, 'body_temp_day6': 38.3,
+    'cows_movement_day6': 4950, 'milk_conductivity_day6': 4.2, 'milk_yield_day6': 25.4,
 
-    # Let's simulate a rolling window buffer of recent sensor readings (e.g., 7 days or recent intervals)
-    # We create a small 7-row dataframe to mimic rolling features correctly
-    simulated_sensor_data = {
-        "Body_Temperature_C": [38.8, 38.9, 39.0, 39.1, 39.3, 39.5, 39.8],  # Rising temperature (risk indicator)
-        "Env_Temperature_C": [28.0, 28.5, 29.0, 28.5, 28.0, 29.1, 28.8],
-        "Env_Humidity_Percent": [65.0, 66.0, 64.0, 65.0, 68.0, 70.0, 67.0],
-        "Cows_Movement_Activity": [3800, 3750, 3700, 3500, 3200, 2800, 2400],  # Dropping activity (lethargy)
-        "Milk_Conductivity_mS_cm": [4.6, 4.7, 4.8, 4.0, 4.3, 4.8, 4.4],  # Rising milk EC/TDS (classic mastitis signal)
-    }
+    # Day 7 (Today)
+    'env_temp_day7': 22.0, 'env_humidity_day7': 56.0, 'body_temp_day7': 38.4,
+    'cows_movement_day7': 5100, 'milk_conductivity_day7': 4.2, 'milk_yield_day7': 25.1
+}
 
-    df_live = pd.DataFrame(simulated_sensor_data)
+# 3. Convert dictionary to a DataFrame (1 row)
+df_new = pd.DataFrame([new_cow_data])
 
-    print("\n--- Live Incoming Sensor Stream (Latest Window) ---")
-    print(df_live.tail(3).to_string(index=False))
+# 4. Apply the exact same encoding used during training
+categorical_cols = ['Breed', 'Farm_Cleanliness']
+df_new[categorical_cols] = encoder.transform(df_new[categorical_cols])
 
-    # 4. Apply Time-Series Feature Engineering (Matching training script)
-    sensor_cols = [
-        "Body_Temperature_C",
-        "Env_Temperature_C",
-        "Env_Humidity_Percent",
-        "Cows_Movement_Activity",
-        "Milk_Conductivity_mS_cm",
-    ]
+# 5. Run Prediction
+risk_prediction = model.predict(df_new)[0]
 
-    for col in sensor_cols:
-        df_live[f"{col}_roll3_mean"] = df_live[col].rolling(3, min_periods=1).mean()
-        df_live[f"{col}_roll7_mean"] = df_live[col].rolling(7, min_periods=1).mean()
-        df_live[f"{col}_roll7_std"] = df_live[col].rolling(7, min_periods=1).std().fillna(0)
+# Clip value between 0 and 100% just in case of statistical outliers
+risk_prediction = np.clip(risk_prediction, 0, 100)
 
-    # 5. Add Metadata & One-Hot Encoding for Breed
-    df_live["Age_Years"] = age
+print(f"\n🔔 Mastitis Infection Risk (Next 7-14 Days): {risk_prediction:.2f}%")
 
-    for col in feature_names:
-        if col.startswith("Breed_"):
-            df_live[col] = 1 if col == f"Breed_{breed}" else 0
-        elif col not in df_live.columns:
-            df_live[col] = 0
-
-    # Extract the absolute latest row for final prediction
-    X_inference = df_live.iloc[[-1]][feature_names]
-
-    # 6. Predict Risk Probability
-    print("\n--- Running ML Inference ---")
-    probabilities = model.predict_proba(X_inference)
-    risk_probability = probabilities[0][1]  # Probability of class 1 (Mastitis Risk in 7 Days)
-    risk_percentage = round(risk_probability * 100, 2)
-
-    print(f"Calculated 7-Day Mastitis Risk: {risk_percentage}%")
-
-    # 7. Provide Status and Action Recommendation
-    if risk_percentage > 60.0:
-        status = "HIGH RISK - Inspect Immediately"
-        action = "Isolate subject. Conduct California Mastitis Test (CMT) and consult vet."
-    elif risk_percentage > 35.0:
-        status = "MODERATE RISK - Monitor Closely"
-        action = "Manually check udder for heat or swelling. Strip milk to check for clots."
-    else:
-        status = "LOW RISK - Normal"
-        action = "Maintain standard hygiene and post-milking teat dipping."
-
-    print(f"Status Recommendation  : {status}")
-    print(f"Action Plan            : {action}")
-    print("=" * 60)
-
-
-if __name__ == "__main__":
-    showcase_mastitis_prediction()
+if risk_prediction > 75.0:
+    print("STATUS: CRITICAL. Isolate cow immediately and consult veterinary diagnostic tools.")
+elif risk_prediction > 40.0:
+    print("STATUS: WATCH. Monitor temperature and milk conductivity closely.")
+else:
+    print("STATUS: HEALTHY. Normal behavioral patterns detected.")
